@@ -2,7 +2,7 @@
 <html lang="he" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Wordle של המשפחה</title>
   <style>
     :root {
@@ -22,7 +22,7 @@
       --font:      'Segoe UI', Arial, sans-serif;
     }
 
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    * { margin: 0; padding: 0; box-sizing: border-box; touch-action: manipulation; }
 
     body {
       background: var(--bg);
@@ -79,7 +79,8 @@
       color: var(--text);
     }
 
-    .tile.filled  { border-color: #c0a0c0; animation: pop 0.1s ease; }
+    .tile.filled    { border-color: #c0a0c0; animation: pop 0.1s ease; }
+    .tile.selected  { border-color: #2a9d8f; border-width: 3px; background: #e0fff8; }
     .tile.correct { background: var(--correct); border-color: var(--correct); color: var(--correct-t); }
     .tile.present { background: var(--present); border-color: var(--present); color: var(--present-t); }
     .tile.absent  { background: var(--absent);  border-color: var(--absent);  color: var(--absent-t);  }
@@ -352,9 +353,11 @@ const WORDS = [
 const FINALS  = { 'ך':'כ', 'ם':'מ', 'ן':'נ', 'ף':'פ', 'ץ':'צ' };
 const norm    = s => s.split('').map(c => FINALS[c] ?? c).join('');
 
-const START  = new Date("2026-04-17"); START.setHours(0,0,0,0);
-const TODAY  = new Date();             TODAY.setHours(0,0,0,0);
-const DAY    = Math.max(0, Math.floor((TODAY - START) / 86400000));
+const START  = new Date("2026-04-19T00:00:00");
+const TODAY  = new Date();
+// חישוב לפי תאריך מקומי — מתחלף בחצות
+const todayMidnight = new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate());
+const DAY    = Math.max(0, Math.floor((todayMidnight - START) / 86400000));
 const ENTRY  = WORDS[DAY % WORDS.length];
 const TARGET = norm(ENTRY.word);
 const LEN    = TARGET.length;
@@ -362,18 +365,26 @@ const MAX    = 6;
 
 document.getElementById('puzzle-num').textContent = `פאזל #${DAY + 1}  •  ${LEN} אותיות`;
 
-let guesses  = [];
-let current  = [];
-let done     = false;
-let keyState = {};
+let guesses   = [];
+let current   = [];
+let done      = false;
+let keyState  = {};
+let selectedI = null; // אינדקס האות הנבחרת
 
 const gridEl = document.getElementById('grid');
 gridEl.style.gridTemplateColumns = `repeat(${LEN}, 52px)`;
 
-const tiles = Array.from({ length: MAX }, () =>
-  Array.from({ length: LEN }, () => {
+const tiles = Array.from({ length: MAX }, (_, r) =>
+  Array.from({ length: LEN }, (_, c) => {
     const d = document.createElement('div');
     d.className = 'tile';
+    d.addEventListener('click', () => {
+      if (done) return;
+      const row = guesses.length;
+      if (r !== row || !current[c]) return;
+      selectedI = (selectedI === c) ? null : c;
+      renderRow();
+    });
     gridEl.appendChild(d);
     return d;
   })
@@ -413,11 +424,23 @@ document.addEventListener('keydown', e => {
 function handle(k) {
   if (done) return;
   if (k === '⌫') {
-    current.pop();
+    if (selectedI !== null) {
+      // מחיקת האות הנבחרת — הזזת השאר שמאלה
+      current.splice(selectedI, 1);
+      selectedI = null;
+    } else {
+      current.pop();
+    }
   } else if (k === '✓') {
     submit(); return;
-  } else if (current.length < LEN) {
-    current.push(k);
+  } else {
+    if (selectedI !== null) {
+      // החלפת האות הנבחרת
+      current[selectedI] = k;
+      selectedI = null;
+    } else if (current.length < LEN) {
+      current.push(k);
+    }
   }
   renderRow();
 }
@@ -425,8 +448,9 @@ function handle(k) {
 function renderRow() {
   const r = guesses.length;
   for (let c = 0; c < LEN; c++) {
+    const isSel = selectedI === c && current[c];
     tiles[r][c].textContent = current[c] ?? '';
-    tiles[r][c].className   = 'tile' + (current[c] ? ' filled' : '');
+    tiles[r][c].className   = 'tile' + (current[c] ? (isSel ? ' selected' : ' filled') : '');
   }
 }
 
@@ -461,7 +485,8 @@ function submit() {
   }, LEN * 90);
 
   guesses.push(guess);
-  current = [];
+  current   = [];
+  selectedI = null;
 
   if (guesses.length >= 2 && ng !== TARGET && ENTRY.hint)
     document.getElementById('hint-btn').style.display = 'inline-block';
@@ -499,7 +524,7 @@ function calcResult(guess, target) {
 function showResult(won) {
   document.getElementById('result-word').textContent =
     won ? `✅ ${ENTRY.word}` : `❌ המילה הייתה: ${ENTRY.word}`;
-  document.getElementById('result-hint').textContent = ENTRY.hint ?? '';
+  document.getElementById('result-hint').textContent = ENTRY.hint ? `הרמז היה: ${ENTRY.hint}` : '';
   document.getElementById('result').style.display = 'flex';
 }
 
